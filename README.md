@@ -25,7 +25,7 @@ Abra o Termux e digite os comandos abaixo:
 ```bash
 pkg update && pkg upgrade -y
 pkg install git -y
-git clone [https://github.com/SEU-USUARIO/toric-cloud.git](https://github.com/SEU-USUARIO/toric-cloud.git)
+git clone https://github.com/toricv/toric-cloud.git
 cd toric-cloud
 bash install.sh
 ```
