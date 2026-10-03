@@ -93,11 +93,9 @@ echo "[4/6] Configurando o arquivo copyparty.conf..."
 CONF_DIR="$HOME/.copyparty"
 mkdir -p "$CONF_DIR"
 
-# Gera o arquivo de configuração oficial do Copyparty sem flags booleanas com parâmetro
 cat << EOF > "$CONF_DIR/copyparty.conf"
 [global]
   p: $PORT
-  e2d
 
 [accounts]
   $USERNAME: $PASSWORD
@@ -109,11 +107,11 @@ cat << EOF > "$CONF_DIR/copyparty.conf"
 
 EOF
 
-# Adiciona volumes para cada armazenamento USB externo detectado em /storage
 for dev in /storage/*; do
     if [ -d "$dev" ] && [ "$dev" != "/storage/emulated" ] && [ "$dev" != "/storage/self" ]; then
         DEV_NAME=$(basename "$dev")
         cat << EOF >> "$CONF_DIR/copyparty.conf"
+
 [/USB_$DEV_NAME]
   $dev
   acc: A
@@ -204,10 +202,4 @@ else
 fi
 echo
 echo "Usuário: $USERNAME"
-echo
-echo "Comandos de controle:"
-echo "  toric-cloud start   -> Inicia o servidor"
-echo "  toric-cloud stop    -> Para o servidor"
-echo "  toric-cloud restart -> Reinicia o servidor"
-echo "  toric-cloud status  -> Mostra o status"
 echo
