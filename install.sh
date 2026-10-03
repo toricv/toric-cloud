@@ -16,9 +16,9 @@ echo "Depois de permitir o acesso, pressione ENTER."
 read -r
 
 echo
-echo "[2/7] Instalando Nginx, PHP, extensões e utilitários..."
+echo "[2/7] Instalando Nginx, PHP, PHP-FPM e utilitários..."
 pkg update -y
-pkg install nginx php php-fpm php-mbstring wget tar procps python -y
+pkg install nginx php php-fpm wget tar procps python -y
 
 echo
 echo "[3/7] Baixando e preparando o TinyFileManager..."
@@ -111,6 +111,16 @@ EOF
 
 echo
 echo "[5/7] Configurando PHP-FPM e Nginx..."
+
+# Criar e configurar diretório de sessões para o PHP no Termux
+SESSION_DIR="$PREFIX/tmp/php_sessions"
+mkdir -p "$SESSION_DIR"
+chmod 700 "$SESSION_DIR"
+
+PHP_INI="$PREFIX/etc/php.ini"
+if [ -f "$PHP_INI" ]; then
+    sed -i "s|;session.save_path = .*|session.save_path = \"$SESSION_DIR\"|g" "$PHP_INI"
+fi
 
 # Ajustar o PHP-FPM
 PHP_FPM_CONF="$PREFIX/etc/php-fpm.d/www.conf"
