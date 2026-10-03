@@ -36,7 +36,7 @@ case "$ARCH" in
 esac
 
 echo
-echo "[4/7] Baixando File Browser..."
+echo "[4/7] Baixando e instalando File Browser..."
 cd "$HOME"
 rm -f "$FILE"
 wget -q --show-progress "https://github.com/filebrowser/filebrowser/releases/latest/download/$FILE"
@@ -45,17 +45,25 @@ mv -f filebrowser "$PREFIX/bin/filebrowser"
 chmod +x "$PREFIX/bin/filebrowser"
 rm -f "$FILE"
 
+if ! command -v filebrowser >/dev/null 2>&1; then
+    echo "Erro: O File Browser não foi instalado corretamente."
+    exit 1
+fi
+
 echo
-echo "[5/7] Configurando o banco de dados e raiz..."
+echo "✓ File Browser instalado em $PREFIX/bin/filebrowser"
+
+echo
+echo "[5/7] Configurando o banco de dados e raiz (/storage)..."
 mkdir -p "$HOME/.filebrowser"
 DB="$HOME/.filebrowser/filebrowser.db"
 
-# Remove banco antigo para evitar conflito de permissões anteriores
+# Remove banco antigo para recriar com permissões corretas
 rm -f "$DB"
 
-# Inicializa as configurações definindo a raiz diretamente para a pasta de armazenamento do Termux
+# Inicializa as configurações definindo a raiz diretamente para /storage
 filebrowser -d "$DB" config init
-filebrowser -d "$DB" config set -a 0.0.0.0 -r "$HOME/storage"
+filebrowser -d "$DB" config set -a 0.0.0.0 -r "/storage"
 
 echo
 echo "======================================"
@@ -89,7 +97,7 @@ while true; do
     echo
 done
 
-# Cria o utilizador com permissão administrativa total sobre o escopo da raiz definida
+# Cria o utilizador com permissão administrativa total sobre o escopo da raiz (/storage)
 filebrowser -d "$DB" users add "$USERNAME" "$PASSWORD" --perm.admin
 
 echo
@@ -116,7 +124,7 @@ while true; do
     break
 done
 
-# Atualiza a porta na configuração global
+# Atualiza a porta na configuração global do FileBrowser
 filebrowser -d "$DB" config set -p "$PORT"
 
 echo
@@ -126,7 +134,7 @@ cat << EOF > $PREFIX/bin/toric-cloud
 #!/data/data/com.termux/files/usr/bin/bash
 
 PORT="$PORT"
-ROOT_DIR="\$HOME/storage"
+ROOT_DIR="/storage"
 DB_PATH="\$HOME/.filebrowser/filebrowser.db"
 LOG_PATH="\$HOME/.filebrowser/filebrowser.log"
 
