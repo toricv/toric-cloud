@@ -232,6 +232,7 @@ case "\$1" in
         echo "Uso: toric-cloud {start|stop|restart|status}"
         exit 1
         ;;
+esac
 EOF
 
 chmod +x $PREFIX/bin/toric-cloud
