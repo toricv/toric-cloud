@@ -16,14 +16,13 @@ echo "Depois de permitir o acesso, pressione ENTER."
 read -r
 
 echo
-echo "[2/6] Instalando Python, Pip, Jinja2 e utilitários..."
+echo "[2/6] Instalando Python, Pip e utilitários..."
 pkg update -y
 pkg install python python-pip procps wget -y
 
 echo
-echo "[3/6] Instalando Copyparty via Pip..."
-pip install --upgrade pip
-pip install copyparty jinja2
+echo "[3/6] Instalando Copyparty..."
+pip install copyparty jinja2 --break-system-packages
 
 if ! command -v copyparty >/dev/null 2>&1; then
     echo "Erro ao instalar o Copyparty."
@@ -89,12 +88,11 @@ while true; do
 done
 
 echo
-echo "[4/6] Configurando arquivo de parâmetros do Copyparty..."
+echo "[4/6] Configurando arquivo de execução do Copyparty..."
 
 CONF_DIR="$HOME/.copyparty"
 mkdir -p "$CONF_DIR"
 
-# Função auxiliar para gerar o script de inicialização do Copyparty com os volumes mapeados
 cat << EOF > "$CONF_DIR/run.sh"
 #!/data/data/com.termux/files/usr/bin/bash
 
