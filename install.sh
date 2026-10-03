@@ -93,11 +93,11 @@ echo "[4/6] Configurando o arquivo copyparty.conf..."
 CONF_DIR="$HOME/.copyparty"
 mkdir -p "$CONF_DIR"
 
-# Gera o arquivo de configuração oficial do Copyparty
+# Gera o arquivo de configuração oficial do Copyparty sem flags booleanas com parâmetro
 cat << EOF > "$CONF_DIR/copyparty.conf"
 [global]
   p: $PORT
-  e2d: true
+  e2d
 
 [accounts]
   $USERNAME: $PASSWORD
