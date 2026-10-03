@@ -4,11 +4,11 @@ set -e
 
 echo "======================================"
 echo "    TORIC PRIVATE LAB - TORIC CLOUD   "
-echo "        (Nginx + TinyFileManager)     "
+echo "              (Copyparty)             "
 echo "======================================"
 echo
 
-echo "[1/7] Solicitando acesso aos arquivos..."
+echo "[1/6] Solicitando acesso aos arquivos..."
 termux-setup-storage
 
 echo
@@ -16,24 +16,21 @@ echo "Depois de permitir o acesso, pressione ENTER."
 read -r
 
 echo
-echo "[2/7] Instalando Nginx, PHP, PHP-FPM e utilitários..."
+echo "[2/6] Instalando Python, Pip, Jinja2 e utilitários..."
 pkg update -y
-pkg install nginx php php-fpm wget tar procps python -y
+pkg install python python-pip procps wget -y
 
 echo
-echo "[3/7] Baixando e preparando o TinyFileManager..."
-WEB_DIR="$HOME/toric-cloud-web"
-rm -rf "$WEB_DIR"
-mkdir -p "$WEB_DIR"
+echo "[3/6] Instalando Copyparty via Pip..."
+pip install --upgrade pip
+pip install copyparty jinja2
 
-wget -q -O "$WEB_DIR/index.php" "https://raw.githubusercontent.com/prasathmani/tinyfilemanager/master/tinyfilemanager.php"
-
-if [ ! -f "$WEB_DIR/index.php" ]; then
-    echo "Erro ao baixar o TinyFileManager."
+if ! command -v copyparty >/dev/null 2>&1; then
+    echo "Erro ao instalar o Copyparty."
     exit 1
 fi
 
-echo "✓ TinyFileManager baixado com sucesso."
+echo "✓ Copyparty instalado com sucesso."
 
 echo
 echo "======================================"
@@ -67,9 +64,6 @@ while true; do
     echo
 done
 
-# Gera o hash oficial do PHP para a senha
-HASH_PASS=$(php -r "echo password_hash('$PASSWORD', PASSWORD_DEFAULT);")
-
 echo
 echo "======================================"
 echo "       CONFIGURAÇÃO DA PORTA"
@@ -95,124 +89,62 @@ while true; do
 done
 
 echo
-echo "[4/7] Mapeando armazenamentos e configurando o TinyFileManager..."
+echo "[4/6] Configurando arquivo de parâmetros do Copyparty..."
 
-# Garante que a pasta raiz do Android esteja acessível
-ROOT_STORAGE="/storage/emulated/0"
+CONF_DIR="$HOME/.copyparty"
+mkdir -p "$CONF_DIR"
 
-# Mapeia volumes externos no Hub USB-C (ex: /storage/ABCD-1234) e cria links simbólicos
+# Função auxiliar para gerar o script de inicialização do Copyparty com os volumes mapeados
+cat << EOF > "$CONF_DIR/run.sh"
+#!/data/data/com.termux/files/usr/bin/bash
+
+# Parâmetros base
+ARGS="-p $PORT -a $USERNAME:$PASSWORD --e2ds"
+
+# Volume 1: Armazenamento Interno do Z Flip 7
+ARGS="\$ARGS -v /storage/emulated/0:Celular:rw,A"
+
+# Mapeamento automático de volumes do Hub USB-C (/storage/XXXX-XXXX)
 for dev in /storage/*; do
-    if [ -d "$dev" ] && [ "$dev" != "/storage/emulated" ] && [ "$dev" != "/storage/self" ]; then
-        DEV_NAME=$(basename "$dev")
-        LINK_PATH="$ROOT_STORAGE/USB_$DEV_NAME"
-        if [ ! -L "$LINK_PATH" ] && [ ! -e "$LINK_PATH" ]; then
-            ln -s "$dev" "$LINK_PATH" || true
-            echo "✓ Vinculado armazenamento externo: $dev -> $LINK_PATH"
-        fi
+    if [ -d "\$dev" ] && [ "\$dev" != "/storage/emulated" ] && [ "\$dev" != "/storage/self" ]; then
+        DEV_NAME=\$(basename "\$dev")
+        ARGS="\$ARGS -v \$dev:USB_\$DEV_NAME:rw,A"
     fi
 done
 
-# Cria o arquivo de configuração do TinyFileManager com a raiz /storage/emulated/0
-cat << EOF > "$WEB_DIR/config.php"
-<?php
-// Configurações do Toric Cloud
-\$use_auth = true;
-\$auth_users = array(
-    '$USERNAME' => '$HASH_PASS'
-);
-\$root_path = '$ROOT_STORAGE';
-\$root_url = '';
-\$http_host = \$_SERVER['HTTP_HOST'];
+exec copyparty \$ARGS
 EOF
 
-echo
-echo "[5/7] Configurando diretórios de sessão, PHP-FPM e Nginx..."
-
-# Configurar diretório de sessões do PHP no Termux
-SESSION_DIR="$PREFIX/tmp/php_sessions"
-mkdir -p "$SESSION_DIR"
-chmod 700 "$SESSION_DIR"
-
-PHP_INI="$PREFIX/etc/php.ini"
-if [ -f "$PHP_INI" ]; then
-    sed -i "s|;session.save_path = .*|session.save_path = \"$SESSION_DIR\"|g" "$PHP_INI"
-fi
-
-# Ajustar o PHP-FPM
-PHP_FPM_CONF="$PREFIX/etc/php-fpm.d/www.conf"
-if [ -f "$PHP_FPM_CONF" ]; then
-    sed -i 's|listen = .*|listen = 127.0.0.1:9000|g' "$PHP_FPM_CONF"
-fi
-
-# Ajustar o Nginx
-NGINX_CONF="$PREFIX/etc/nginx/nginx.conf"
-
-cat << EOF > "$NGINX_CONF"
-worker_processes 1;
-
-events {
-    worker_connections 1024;
-}
-
-http {
-    include mime.types;
-    default_type application/octet-stream;
-    sendfile on;
-    keepalive_timeout 65;
-
-    server {
-        listen $PORT;
-        server_name localhost;
-        root $WEB_DIR;
-        index index.php index.html;
-
-        client_max_body_size 10G;
-
-        location / {
-            try_files \$uri \$uri/ /index.php?\$args;
-        }
-
-        location ~ \.php$ {
-            fastcgi_pass 127.0.0.1:9000;
-            fastcgi_index index.php;
-            fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
-            include fastcgi_params;
-        }
-    }
-}
-EOF
+chmod +x "$CONF_DIR/run.sh"
 
 echo
-echo "[6/7] Criando o comando global 'toric-cloud'..."
+echo "[5/6] Criando o comando global 'toric-cloud'..."
 
 cat << EOF > $PREFIX/bin/toric-cloud
 #!/data/data/com.termux/files/usr/bin/bash
 
 PORT="$PORT"
+CONF_DIR="\$HOME/.copyparty"
 
 case "\$1" in
     start)
-        echo "[Toric Cloud] Verificando novos volumes USB-C..."
-        for dev in /storage/*; do
-            if [ -d "\$dev" ] && [ "\$dev" != "/storage/emulated" ] && [ "\$dev" != "/storage/self" ]; then
-                DEV_NAME=\$(basename "\$dev")
-                LINK_PATH="/storage/emulated/0/USB_\$DEV_NAME"
-                if [ ! -L "\$LINK_PATH" ] && [ ! -e "\$LINK_PATH" ]; then
-                    ln -s "\$dev" "\$LINK_PATH" || true
-                fi
+        if pgrep -f "copyparty" > /dev/null; then
+            echo "[Toric Cloud] O servidor já está rodando!"
+        else
+            echo "[Toric Cloud] Iniciando o Copyparty..."
+            termux-wake-lock
+            nohup "\$CONF_DIR/run.sh" > "\$CONF_DIR/copyparty.log" 2>&1 &
+            sleep 2
+            if pgrep -f "copyparty" > /dev/null; then
+                echo "[Toric Cloud] Servidor iniciado na porta \$PORT."
+            else
+                echo "[Toric Cloud] Erro ao iniciar. Verifique o log em \$CONF_DIR/copyparty.log"
             fi
-        done
-
-        echo "[Toric Cloud] Iniciando Nginx e PHP-FPM..."
-        termux-wake-lock
-        php-fpm >/dev/null 2>&1 || true
-        nginx >/dev/null 2>&1 || true
-        echo "[Toric Cloud] Servidor iniciado na porta \$PORT."
+        fi
         ;;
     stop)
-        echo "[Toric Cloud] Parando serviços..."
-        pkill -f nginx || true
-        pkill -f php-fpm || true
+        echo "[Toric Cloud] Parando o Copyparty..."
+        pkill -f "copyparty" || true
         termux-wake-unlock
         echo "[Toric Cloud] Servidor parado."
         ;;
@@ -222,8 +154,8 @@ case "\$1" in
         \$0 start
         ;;
     status)
-        if pgrep -f "nginx" > /dev/null && pgrep -f "php-fpm" > /dev/null; then
-            echo "[Toric Cloud] Status: ONLINE (Nginx + PHP-FPM Rodando)"
+        if pgrep -f "copyparty" > /dev/null; then
+            echo "[Toric Cloud] Status: ONLINE (Copyparty Rodando)"
         else
             echo "[Toric Cloud] Status: OFFLINE"
         fi
@@ -238,7 +170,7 @@ EOF
 chmod +x $PREFIX/bin/toric-cloud
 
 echo
-echo "[7/7] Finalizando e iniciando o servidor..."
+echo "[6/6] Finalizando e iniciando o servidor..."
 
 IP=$(python -c "
 import socket
@@ -268,8 +200,8 @@ echo
 echo "Usuário: $USERNAME"
 echo
 echo "Comandos de controle:"
-echo "  toric-cloud start   -> Inicia Nginx + PHP-FPM"
-echo "  toric-cloud stop    -> Para Nginx + PHP-FPM"
-echo "  toric-cloud restart -> Reinicia os serviços"
+echo "  toric-cloud start   -> Inicia o servidor"
+echo "  toric-cloud stop    -> Para o servidor"
+echo "  toric-cloud restart -> Reinicia o servidor"
 echo "  toric-cloud status  -> Mostra o status"
 echo
