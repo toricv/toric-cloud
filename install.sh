@@ -4,6 +4,7 @@ set -e
 
 echo "======================================"
 echo "    TORIC PRIVATE LAB - TORIC CLOUD   "
+echo "        (Nginx + TinyFileManager)     "
 echo "======================================"
 echo
 
@@ -15,55 +16,24 @@ echo "Depois de permitir o acesso, pressione ENTER."
 read -r
 
 echo
-echo "[2/7] Instalando dependências..."
-pkg install wget tar procps python -y
+echo "[2/7] Instalando Nginx, PHP, PHP-FPM e utilitários..."
+pkg update -y
+pkg install nginx php-fpm wget tar procps python -y
 
 echo
-if ! command -v python >/dev/null 2>&1; then
-    echo "Não foi possível instalar o Python."
+echo "[3/7] Baixando e instalando o TinyFileManager..."
+WEB_DIR="$HOME/toric-cloud-web"
+rm -rf "$WEB_DIR"
+mkdir -p "$WEB_DIR"
+
+wget -q -O "$WEB_DIR/index.php" "https://raw.githubusercontent.com/prasathmani/tinyfilemanager/master/tinyfilemanager.php"
+
+if [ ! -f "$WEB_DIR/index.php" ]; then
+    echo "Erro ao baixar o TinyFileManager."
     exit 1
 fi
 
-echo "[3/7] Detectando arquitetura..."
-ARCH=$(uname -m)
-
-case "$ARCH" in
-    aarch64) FILE="linux-arm64-filebrowser.tar.gz" ;;
-    x86_64)  FILE="linux-amd64-filebrowser.tar.gz" ;;
-    i686|x86) FILE="linux-386-filebrowser.tar.gz" ;;
-    armv7l|arm) FILE="linux-armv5-filebrowser.tar.gz" ;;
-    *) echo "Arquitetura não suportada: $ARCH"; exit 1 ;;
-esac
-
-echo
-echo "[4/7] Baixando e instalando File Browser..."
-cd "$HOME"
-rm -f "$FILE"
-wget -q --show-progress "https://github.com/filebrowser/filebrowser/releases/latest/download/$FILE"
-tar -xzf "$FILE"
-mv -f filebrowser "$PREFIX/bin/filebrowser"
-chmod +x "$PREFIX/bin/filebrowser"
-rm -f "$FILE"
-
-if ! command -v filebrowser >/dev/null 2>&1; then
-    echo "Erro: O File Browser não foi instalado corretamente."
-    exit 1
-fi
-
-echo
-echo "✓ File Browser instalado em $PREFIX/bin/filebrowser"
-
-echo
-echo "[5/7] Configurando o banco de dados e raiz (/storage)..."
-mkdir -p "$HOME/.filebrowser"
-DB="$HOME/.filebrowser/filebrowser.db"
-
-# Remove banco antigo para recriar com permissões corretas
-rm -f "$DB"
-
-# Inicializa as configurações definindo a raiz diretamente para /storage
-filebrowser -d "$DB" config init
-filebrowser -d "$DB" config set -a 0.0.0.0 -r "/storage"
+echo "✓ TinyFileManager instalado com sucesso."
 
 echo
 echo "======================================"
@@ -97,8 +67,8 @@ while true; do
     echo
 done
 
-# Cria o utilizador com permissão administrativa total sobre o escopo da raiz (/storage)
-filebrowser -d "$DB" users add "$USERNAME" "$PASSWORD" --perm.admin
+# Gera o hash da senha via PHP
+HASH_PASS=$(php -r "echo password_hash('$PASSWORD', PASSWORD_DEFAULT);")
 
 echo
 echo "======================================"
@@ -124,8 +94,69 @@ while true; do
     break
 done
 
-# Atualiza a porta na configuração global do FileBrowser
-filebrowser -d "$DB" config set -p "$PORT"
+echo
+echo "[4/7] Configurando o TinyFileManager (Usuário e Raiz)..."
+
+# Cria o arquivo de configuração personalizada do TinyFileManager
+cat << EOF > "$WEB_DIR/config.php"
+<?php
+// Configurações do Toric Cloud
+\$use_auth = true;
+\$auth_users = array(
+    '$USERNAME' => '$HASH_PASS'
+);
+// Define a raiz para a pasta de armazenamento mapeada pelo Termux
+\$root_path = '/storage';
+\$root_url = '';
+\$http_host = '\$_SERVER[HTTP_HOST]';
+EOF
+
+echo
+echo "[5/7] Configurando PHP-FPM e Nginx..."
+
+# Configurar PHP-FPM para rodar via socket ou porta 9000
+PHP_FPM_CONF="$PREFIX/etc/php-fpm.d/www.conf"
+if [ -f "$PHP_FPM_CONF" ]; then
+    sed -i 's|listen = .*|listen = 127.0.0.1:9000|g' "$PHP_FPM_CONF"
+fi
+
+# Configurar o Nginx
+NGINX_CONF="$PREFIX/etc/nginx/nginx.conf"
+
+cat << EOF > "$NGINX_CONF"
+worker_processes 1;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    include mime.types;
+    default_type application/octet-stream;
+    sendfile on;
+    keepalive_timeout 65;
+
+    server {
+        listen $PORT;
+        server_name localhost;
+        root $WEB_DIR;
+        index index.php index.html;
+
+        client_max_body_size 10G;
+
+        location / {
+            try_files \$uri \$uri/ /index.php?\$args;
+        }
+
+        location ~ \.php$ {
+            fastcgi_pass 127.0.0.1:9000;
+            fastcgi_index index.php;
+            fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
+            include fastcgi_params;
+        }
+    }
+}
+EOF
 
 echo
 echo "[6/7] Criando o comando global 'toric-cloud'..."
@@ -134,29 +165,19 @@ cat << EOF > $PREFIX/bin/toric-cloud
 #!/data/data/com.termux/files/usr/bin/bash
 
 PORT="$PORT"
-ROOT_DIR="/storage"
-DB_PATH="\$HOME/.filebrowser/filebrowser.db"
-LOG_PATH="\$HOME/.filebrowser/filebrowser.log"
 
 case "\$1" in
     start)
-        if pgrep -x "filebrowser" > /dev/null; then
-            echo "[Toric Cloud] O servidor já está rodando!"
-        else
-            echo "[Toric Cloud] Iniciando o servidor..."
-            termux-wake-lock
-            nohup filebrowser -d \$DB_PATH > \$LOG_PATH 2>&1 &
-            sleep 2
-            if pgrep -x "filebrowser" > /dev/null; then
-                echo "[Toric Cloud] Servidor iniciado na porta \$PORT."
-            else
-                echo "[Toric Cloud] Erro ao iniciar o servidor. Verifique o log em \$LOG_PATH"
-            fi
-        fi
+        echo "[Toric Cloud] Iniciando serviços (Nginx + PHP-FPM)..."
+        termux-wake-lock
+        php-fpm >/dev/null 2>&1 || true
+        nginx >/dev/null 2>&1 || true
+        echo "[Toric Cloud] Servidor iniciado na porta \$PORT."
         ;;
     stop)
-        echo "[Toric Cloud] Parando o servidor..."
-        pkill -x filebrowser || true
+        echo "[Toric Cloud] Parando serviços..."
+        pkill -f nginx || true
+        pkill -f php-fpm || true
         termux-wake-unlock
         echo "[Toric Cloud] Servidor parado."
         ;;
@@ -166,10 +187,10 @@ case "\$1" in
         \$0 start
         ;;
     status)
-        if pgrep -x "filebrowser" > /dev/null; then
-            echo "[Toric Cloud] Status: ONLINE (Rodando)"
+        if pgrep -f "nginx" > /dev/null && pgrep -f "php-fpm" > /dev/null; then
+            echo "[Toric Cloud] Status: ONLINE (Nginx + PHP-FPM Rodando)"
         else
-            echo "[Toric Cloud] Status: OFFLINE (Parado)"
+            echo "[Toric Cloud] Status: OFFLINE"
         fi
         ;;
     *)
@@ -182,7 +203,7 @@ EOF
 chmod +x $PREFIX/bin/toric-cloud
 
 echo
-echo "[7/7] Finalizando e iniciando serviço..."
+echo "[7/7] Finalizando e iniciando o servidor..."
 
 IP=$(python -c "
 import socket
@@ -200,7 +221,7 @@ toric-cloud start
 
 echo
 echo "======================================"
-echo "       SERVIDOR INICIADO!"
+echo "       INSTALAÇÃO CONCLUÍDA!"
 echo "======================================"
 echo "Acesse pelo navegador:"
 if [ -n "$IP" ]; then
@@ -212,8 +233,8 @@ echo
 echo "Usuário: $USERNAME"
 echo
 echo "Comandos de controle:"
-echo "  toric-cloud start   -> Inicia o servidor"
-echo "  toric-cloud stop    -> Para o servidor"
-echo "  toric-cloud restart -> Reinicia o servidor"
+echo "  toric-cloud start   -> Inicia Nginx + PHP-FPM"
+echo "  toric-cloud stop    -> Para Nginx + PHP-FPM"
+echo "  toric-cloud restart -> Reinicia os serviços"
 echo "  toric-cloud status  -> Mostra o status"
 echo
