@@ -95,24 +95,40 @@ while true; do
 done
 
 echo
-echo "[4/7] Configurando o arquivo config.php do TinyFileManager..."
+echo "[4/7] Mapeando armazenamentos e configurando o TinyFileManager..."
 
+# Garante que a pasta raiz do Android esteja acessível
+ROOT_STORAGE="/storage/emulated/0"
+
+# Mapeia volumes externos no Hub USB-C (ex: /storage/ABCD-1234) e cria links simbólicos
+for dev in /storage/*; do
+    if [ -d "$dev" ] && [ "$dev" != "/storage/emulated" ] && [ "$dev" != "/storage/self" ]; then
+        DEV_NAME=$(basename "$dev")
+        LINK_PATH="$ROOT_STORAGE/USB_$DEV_NAME"
+        if [ ! -L "$LINK_PATH" ] && [ ! -e "$LINK_PATH" ]; then
+            ln -s "$dev" "$LINK_PATH" || true
+            echo "✓ Vinculado armazenamento externo: $dev -> $LINK_PATH"
+        fi
+    fi
+done
+
+# Cria o arquivo de configuração do TinyFileManager com a raiz /storage/emulated/0
 cat << EOF > "$WEB_DIR/config.php"
 <?php
-// Arquivo de configuração customizado do Toric Cloud
+// Configurações do Toric Cloud
 \$use_auth = true;
 \$auth_users = array(
     '$USERNAME' => '$HASH_PASS'
 );
-\$root_path = '/storage';
+\$root_path = '$ROOT_STORAGE';
 \$root_url = '';
 \$http_host = \$_SERVER['HTTP_HOST'];
 EOF
 
 echo
-echo "[5/7] Configurando PHP-FPM e Nginx..."
+echo "[5/7] Configurando diretórios de sessão, PHP-FPM e Nginx..."
 
-# Criar e configurar diretório de sessões para o PHP no Termux
+# Configurar diretório de sessões do PHP no Termux
 SESSION_DIR="$PREFIX/tmp/php_sessions"
 mkdir -p "$SESSION_DIR"
 chmod 700 "$SESSION_DIR"
@@ -176,6 +192,17 @@ PORT="$PORT"
 
 case "\$1" in
     start)
+        echo "[Toric Cloud] Verificando novos volumes USB-C..."
+        for dev in /storage/*; do
+            if [ -d "\$dev" ] && [ "\$dev" != "/storage/emulated" ] && [ "\$dev" != "/storage/self" ]; then
+                DEV_NAME=\$(basename "\$dev")
+                LINK_PATH="/storage/emulated/0/USB_\$DEV_NAME"
+                if [ ! -L "\$LINK_PATH" ] && [ ! -e "\$LINK_PATH" ]; then
+                    ln -s "\$dev" "\$LINK_PATH" || true
+                fi
+            fi
+        done
+
         echo "[Toric Cloud] Iniciando Nginx e PHP-FPM..."
         termux-wake-lock
         php-fpm >/dev/null 2>&1 || true
@@ -205,7 +232,6 @@ case "\$1" in
         echo "Uso: toric-cloud {start|stop|restart|status}"
         exit 1
         ;;
-esac
 EOF
 
 chmod +x $PREFIX/bin/toric-cloud
