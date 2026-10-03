@@ -16,12 +16,12 @@ echo "Depois de permitir o acesso, pressione ENTER."
 read -r
 
 echo
-echo "[2/7] Instalando Nginx, PHP, PHP-FPM e utilitários..."
+echo "[2/7] Instalando Nginx, PHP, extensões e utilitários..."
 pkg update -y
-pkg install nginx php-fpm wget tar procps python -y
+pkg install nginx php php-fpm php-mbstring wget tar procps python -y
 
 echo
-echo "[3/7] Baixando e instalando o TinyFileManager..."
+echo "[3/7] Baixando e preparando o TinyFileManager..."
 WEB_DIR="$HOME/toric-cloud-web"
 rm -rf "$WEB_DIR"
 mkdir -p "$WEB_DIR"
@@ -33,7 +33,7 @@ if [ ! -f "$WEB_DIR/index.php" ]; then
     exit 1
 fi
 
-echo "✓ TinyFileManager instalado com sucesso."
+echo "✓ TinyFileManager baixado com sucesso."
 
 echo
 echo "======================================"
@@ -67,7 +67,7 @@ while true; do
     echo
 done
 
-# Gera o hash da senha via PHP
+# Gera o hash oficial do PHP para a senha
 HASH_PASS=$(php -r "echo password_hash('$PASSWORD', PASSWORD_DEFAULT);")
 
 echo
@@ -95,32 +95,30 @@ while true; do
 done
 
 echo
-echo "[4/7] Configurando o TinyFileManager (Usuário e Raiz)..."
+echo "[4/7] Configurando o arquivo config.php do TinyFileManager..."
 
-# Cria o arquivo de configuração personalizada do TinyFileManager
 cat << EOF > "$WEB_DIR/config.php"
 <?php
-// Configurações do Toric Cloud
+// Arquivo de configuração customizado do Toric Cloud
 \$use_auth = true;
 \$auth_users = array(
     '$USERNAME' => '$HASH_PASS'
 );
-// Define a raiz para a pasta de armazenamento mapeada pelo Termux
 \$root_path = '/storage';
 \$root_url = '';
-\$http_host = '\$_SERVER[HTTP_HOST]';
+\$http_host = \$_SERVER['HTTP_HOST'];
 EOF
 
 echo
 echo "[5/7] Configurando PHP-FPM e Nginx..."
 
-# Configurar PHP-FPM para rodar via socket ou porta 9000
+# Ajustar o PHP-FPM
 PHP_FPM_CONF="$PREFIX/etc/php-fpm.d/www.conf"
 if [ -f "$PHP_FPM_CONF" ]; then
     sed -i 's|listen = .*|listen = 127.0.0.1:9000|g' "$PHP_FPM_CONF"
 fi
 
-# Configurar o Nginx
+# Ajustar o Nginx
 NGINX_CONF="$PREFIX/etc/nginx/nginx.conf"
 
 cat << EOF > "$NGINX_CONF"
@@ -168,7 +166,7 @@ PORT="$PORT"
 
 case "\$1" in
     start)
-        echo "[Toric Cloud] Iniciando serviços (Nginx + PHP-FPM)..."
+        echo "[Toric Cloud] Iniciando Nginx e PHP-FPM..."
         termux-wake-lock
         php-fpm >/dev/null 2>&1 || true
         nginx >/dev/null 2>&1 || true
