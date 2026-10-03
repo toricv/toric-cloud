@@ -88,32 +88,40 @@ while true; do
 done
 
 echo
-echo "[4/6] Configurando arquivo de execução do Copyparty..."
+echo "[4/6] Configurando o arquivo copyparty.conf..."
 
 CONF_DIR="$HOME/.copyparty"
 mkdir -p "$CONF_DIR"
 
-cat << EOF > "$CONF_DIR/run.sh"
-#!/data/data/com.termux/files/usr/bin/bash
+# Gera o arquivo de configuração oficial do Copyparty
+cat << EOF > "$CONF_DIR/copyparty.conf"
+[global]
+  p: $PORT
+  e2d: true
 
-# Parâmetros base
-ARGS="-p $PORT -a $USERNAME:$PASSWORD --e2ds"
+[accounts]
+  $USERNAME: $PASSWORD
 
-# Volume 1: Armazenamento Interno do Z Flip 7
-ARGS="\$ARGS -v /storage/emulated/0:Celular:rw,A"
+[/]
+  /storage/emulated/0
+  acc: A
+  rwa: $USERNAME
 
-# Mapeamento automático de volumes do Hub USB-C (/storage/XXXX-XXXX)
-for dev in /storage/*; do
-    if [ -d "\$dev" ] && [ "\$dev" != "/storage/emulated" ] && [ "\$dev" != "/storage/self" ]; then
-        DEV_NAME=\$(basename "\$dev")
-        ARGS="\$ARGS -v \$dev:USB_\$DEV_NAME:rw,A"
-    fi
-done
-
-exec copyparty \$ARGS
 EOF
 
-chmod +x "$CONF_DIR/run.sh"
+# Adiciona volumes para cada armazenamento USB externo detectado em /storage
+for dev in /storage/*; do
+    if [ -d "$dev" ] && [ "$dev" != "/storage/emulated" ] && [ "$dev" != "/storage/self" ]; then
+        DEV_NAME=$(basename "$dev")
+        cat << EOF >> "$CONF_DIR/copyparty.conf"
+[/USB_$DEV_NAME]
+  $dev
+  acc: A
+  rwa: $USERNAME
+
+EOF
+    fi
+done
 
 echo
 echo "[5/6] Criando o comando global 'toric-cloud'..."
@@ -131,12 +139,12 @@ case "\$1" in
         else
             echo "[Toric Cloud] Iniciando o Copyparty..."
             termux-wake-lock
-            nohup "\$CONF_DIR/run.sh" > "\$CONF_DIR/copyparty.log" 2>&1 &
+            nohup copyparty -c "\$CONF_DIR/copyparty.conf" > "\$CONF_DIR/copyparty.log" 2>&1 &
             sleep 2
             if pgrep -f "copyparty" > /dev/null; then
                 echo "[Toric Cloud] Servidor iniciado na porta \$PORT."
             else
-                echo "[Toric Cloud] Erro ao iniciar. Verifique o log em \$CONF_DIR/copyparty.log"
+                echo "[Toric Cloud] Erro ao iniciar. Verifique o log com: cat \$CONF_DIR/copyparty.log"
             fi
         fi
         ;;
